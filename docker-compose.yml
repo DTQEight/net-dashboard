@@ -1,0 +1,37 @@
+services:
+  dashboard:
+    build: .
+    image: net-dashboard:latest
+    container_name: net-dashboard
+    restart: unless-stopped
+    ports:
+      # 左边是 NAS 上的端口，右边是容器内的 8080
+      # 如果 18080 被占用，改左边的数字即可
+      - "18080:8080"
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      # 历史数据 + 已知设备记录（必须，否则重启后历史丢失）
+      - ./data:/data
+
+      # 读取 NAS 主机信息（只读挂载）
+      # 用途：硬盘容量/占用、主机温度、内存、负载
+      # 不挂载也能跑，只是「NAS 硬盘」卡片会显示不可用
+      - /:/host/root:ro
+      - /sys:/host/sys:ro
+
+      # Docker 容器清单（「Docker 服务」卡片）
+      # ⚠️ 挂载 docker.sock = 把宿主 Docker 控制权交给这个容器。
+      #    本程序只调用只读接口，但在意的话请改用 socket-proxy：
+      #      https://github.com/11notes/docker-socket-proxy
+      #    不挂载也能跑，只是那张卡片会显示不可用。
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    # 容器需要能访问局域网里的路由器（默认 bridge 网络即可）
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"

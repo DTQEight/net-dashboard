@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>网络仪表盘</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0d1117">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="网络仪表盘">
+<meta name="color-scheme" content="dark">
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --card2:#1c2128; --border:#30363d;
+    --fg:#e6edf3; --dim:#8b949e; --acc:#58a6ff;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --purple:#bc8cff; --cyan:#39c5cf;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
+    font-size:14px; line-height:1.5; padding:16px;
+  }
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    flex-wrap:wrap; gap:12px; margin-bottom:16px;
+    padding-bottom:12px; border-bottom:1px solid var(--border);
+  }
+  h1{font-size:18px; font-weight:600; display:flex; align-items:center; gap:8px}
+  h1 .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  h1 .dot.bad{background:var(--err);box-shadow:0 0 8px var(--err)}
+  .meta{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  button{
+    background:var(--card2);color:var(--fg);border:1px solid var(--border);
+    border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;
+  }
+  button:hover{border-color:var(--acc);color:var(--acc)}
+  button:disabled{opacity:.45;cursor:default}
+  button:disabled:hover{border-color:var(--border);color:var(--fg)}
+  button.mini{padding:1px 8px;font-size:11px;border-radius:5px;margin-left:6px;flex-shrink:0}
+  .svc .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* 快捷入口 */
+  .links{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .links a{
+    display:inline-flex;align-items:center;gap:4px;text-decoration:none;
+    background:var(--card2);color:var(--fg);border:1px solid var(--border);
+    border-radius:6px;padding:3px 9px;font-size:12px;transition:all .15s;
+  }
+  .links a:hover{border-color:var(--acc);color:var(--acc);background:rgba(88,166,255,.08)}
+  .links a .ic{font-size:13px;line-height:1}
+
+  /* 服务入口：路由器服务 + Docker 容器混排，统一样式 */
+
+  /* 图表 */
+  .chart-tabs{display:flex;gap:4px;flex-wrap:wrap}
+  .chart-tabs button{padding:2px 9px;font-size:11px;border-radius:5px}
+  .chart-tabs button.on{background:rgba(88,166,255,.15);border-color:var(--acc);color:var(--acc)}
+  .chart-wrap{position:relative;width:100%}
+  .chart-wrap svg{display:block;width:100%;height:180px}
+  .chart-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--dim);padding-top:6px}
+  .chart-legend i{display:inline-block;width:9px;height:3px;border-radius:2px;margin-right:4px;vertical-align:middle}
+  .chart-empty{color:var(--dim);font-size:12px;padding:30px 0;text-align:center}
+
+  /* 硬盘 */
+  .disk-row{display:flex;align-items:center;gap:8px;padding:6px 0;min-width:0}
+  .disk-row+.disk-row{border-top:1px solid rgba(48,54,61,.5)}
+  .disk-row .dn{
+    font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;
+    flex:0 1 auto;min-width:52px;max-width:96px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .disk-row .dbar{flex:1 1 36px;min-width:28px;height:6px;border-radius:3px;background:var(--card2);overflow:hidden}
+  .disk-row .dbar i{display:block;height:100%;border-radius:3px}
+  .disk-row .dv{flex:0 0 auto;font-size:11px;color:var(--dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .disk-row .dv.pct{min-width:30px;text-align:right;font-weight:600}
+  .tag.ok{color:var(--ok)} .tag.warn{color:var(--warn)} .tag.err{color:var(--err)}
+
+  /* Docker 容器清单 */
+  .ctr-grid{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(196px,1fr))}
+  .ctr{border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--card2);min-width:0}
+  .ctr.off{opacity:.45}
+  .ctr .ct{
+    display:flex;align-items:center;gap:5px;font-weight:600;font-size:13px;
+    margin-bottom:3px;min-width:0;
+  }
+  .ctr .ct .ico{font-size:15px;flex-shrink:0}
+  .ctr .ct span.tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ctr .cs{
+    font-size:11px;color:var(--dim);margin-bottom:6px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .ctr .cp{display:flex;flex-wrap:wrap;gap:4px}
+  .ctr .cp a{
+    font-size:11px;text-decoration:none;padding:1px 7px;border-radius:5px;
+    background:rgba(88,166,255,.10);color:var(--acc);
+    border:1px solid rgba(88,166,255,.25);font-variant-numeric:tabular-nums;
+  }
+  .ctr .cp a:hover{background:rgba(88,166,255,.24);border-color:var(--acc)}
+  .ctr .cp a.noweb{background:transparent;color:var(--dim);border-color:var(--border)}
+  .ctr .cp a.noweb:hover{color:var(--fg);border-color:var(--dim)}
+  /* 只声明没发布的端口：容器外访问不到，不做成链接 */
+  .ctr .cp span.int{
+    font-size:11px;padding:1px 7px;border-radius:5px;
+    background:transparent;color:var(--dim);border:1px dashed var(--border);
+    font-variant-numeric:tabular-nums;cursor:help;
+  }
+
+  .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(310px,1fr))}
+
+  /* 统一卡片高度 + 内部滚动：
+     卡片高度不一致时，CSS Grid 会把整行撑高，短的卡片下方留出大片空白。
+     固定高度后每行整齐，内容多的卡片自己滚动。 */
+  .card{
+    background:var(--card);border:1px solid var(--border);border-radius:10px;
+    overflow:hidden;display:flex;flex-direction:column;
+    height:302px;
+  }
+  .card.full{height:322px}
+  /* 内容少、不需要固定高度的卡片 */
+  .card.auto{height:auto}
+  .card h2{
+    font-size:13px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;
+    padding:10px 14px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    flex:0 0 auto;
+  }
+  .card h2 .tag{font-size:11px;padding:1px 7px;border-radius:10px;background:var(--card2);color:var(--dim);text-transform:none}
+  .card .body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:12px 14px}
+  /* 以前写死的内部滚动高度，现在交给 flex 管 */
+  .card .body.scroll{max-height:none}
+  .card .body .scroll{max-height:none;overflow:visible}
+  .card .body::-webkit-scrollbar{width:6px}
+  .card .body::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
+  .card .body::-webkit-scrollbar-track{background:transparent}
+  /* 需要「上面固定、下面滚动」的卡片（比如代理节点：分组信息固定，节点列表滚动） */
+  .card .body.as-flex{display:flex;flex-direction:column;overflow:hidden}
+  .card .body.as-flex > .scroll{flex:1 1 auto;min-height:0;overflow-y:auto;margin-top:8px}
+  .card .body.as-flex > .scroll::-webkit-scrollbar{width:6px}
+  .card .body.as-flex > .scroll::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
+  .card .body.as-flex > .note{flex:0 0 auto}
+
+  @media(max-width:700px){ .card{height:auto;min-height:180px;max-height:420px} }
+  .full{grid-column:1/-1}
+
+  .kv{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0}
+  .kv+.kv{border-top:1px solid rgba(48,54,61,.5)}
+  .kv .k{color:var(--dim);font-size:13px;flex-shrink:0}
+  .kv .v{font-weight:600;text-align:right;word-break:break-all;font-variant-numeric:tabular-nums}
+  .v.big{font-size:19px}
+  .v.ok{color:var(--ok)} .v.warn{color:var(--warn)} .v.err{color:var(--err)}
+  .v.acc{color:var(--acc)} .v.purple{color:var(--purple)} .v.cyan{color:var(--cyan)}
+  .v small{font-weight:400;color:var(--dim);font-size:11px;margin-left:2px}
+
+  .svc{display:flex;align-items:center;gap:8px;padding:6px 0}
+  .svc+.svc{border-top:1px solid rgba(48,54,61,.5)}
+  .svc .led{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .led.on{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+  .led.off{background:#484f58}
+  .svc .nm{flex:1}
+  .svc .pt{color:var(--dim);font-size:12px;font-variant-numeric:tabular-nums}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--dim);font-weight:500;font-size:12px;padding:6px 8px;border-bottom:1px solid var(--border)}
+  td{padding:6px 8px;border-bottom:1px solid rgba(48,54,61,.4);font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:rgba(88,166,255,.04)}
+  .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}
+  .dim{color:var(--dim)}
+  .scroll{max-height:300px;overflow-y:auto}
+  .scroll::-webkit-scrollbar{width:6px}
+  .scroll::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
+
+  .bar{height:5px;border-radius:3px;background:var(--card2);overflow:hidden;margin-top:6px}
+  .bar i{display:block;height:100%;border-radius:3px;transition:width .4s}
+
+  .err-box{color:var(--err);font-size:12px;padding:8px;background:rgba(248,81,73,.08);border-radius:6px;border:1px solid rgba(248,81,73,.25)}
+  .note{color:var(--dim);font-size:12px;padding-top:6px}
+  .rate{display:flex;gap:14px;flex-wrap:wrap}
+  .rate>div{flex:1;min-width:120px}
+  .rate .lab{color:var(--dim);font-size:12px}
+  .rate .num{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+  @media(max-width:600px){ body{padding:10px} .v.big{font-size:17px} }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="dot" id="led"></span>网络仪表盘</h1>
+  <div class="meta">
+    <span id="updated">加载中…</span>
+    <span id="err" class="v err"></span>
+    <span id="who" class="dim" style="font-size:12px"></span>
+    <button id="btn-notify">测试通知</button>
+    <button id="btn-logout" style="display:none">退出</button>
+    <button id="pause">暂停刷新</button>
+  </div>
+</header>
+
+<div class="grid">
+
+  <!-- 概览 -->
+  <div class="card">
+    <h2>网络概览 <span class="tag" id="uptime-tag"></span></h2>
+    <div class="body">
+      <div class="rate">
+        <div>
+          <div class="lab">↓ 下行</div>
+          <div class="num v cyan" id="rate-rx">—</div>
+        </div>
+        <div>
+          <div class="lab">↑ 上行</div>
+          <div class="num v purple" id="rate-tx">—</div>
+        </div>
+      </div>
+      <div style="margin-top:12px">
+        <div class="kv"><span class="k">公网 IPv4</span><span class="v acc mono" id="pub-ip">—</span></div>
+        <div class="kv"><span class="k">WAN 地址</span><span class="v mono" id="wan-ip">—</span></div>
+        <div class="kv"><span class="k">WAN IPv6</span><span class="v mono dim" id="wan-ip6">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 路由器系统 -->
+  <div class="card">
+    <h2>路由器系统</h2>
+    <div class="body" id="sys-body">
+      <div class="kv"><span class="k">CPU 负载</span><span class="v" id="load">—</span></div>
+      <div class="kv"><span class="k">温度</span><span class="v" id="temp">—</span></div>
+      <div class="kv"><span class="k">内存</span><span class="v" id="mem">—</span></div>
+      <div class="bar"><i id="mem-bar" style="width:0%;background:var(--acc)"></i></div>
+      <div class="kv" style="margin-top:8px"><span class="k">运行时间</span><span class="v" id="uptime">—</span></div>
+    </div>
+  </div>
+
+  <!-- mihomo -->
+  <div class="card">
+    <h2>
+      <span>mihomo 代理</span>
+      <span style="display:flex;gap:6px;align-items:center">
+        <span class="tag" id="mihomo-ver"></span>
+        <button id="btn-sub" class="mini" style="margin-left:0">更新订阅</button>
+      </span>
+    </h2>
+    <div class="body">
+      <div class="kv"><span class="k">当前节点</span><span class="v ok" id="cur-node">—</span></div>
+      <div class="kv"><span class="k">活跃连接</span><span class="v" id="conns">—</span></div>
+      <div class="kv"><span class="k">模式</span><span class="v" id="mode">—</span></div>
+      <div class="kv"><span class="k">累计下载</span><span class="v cyan" id="dl-total">—</span></div>
+      <div class="kv"><span class="k">累计上传</span><span class="v purple" id="ul-total">—</span></div>
+    </div>
+  </div>
+
+  <!-- AdGuard -->
+  <div class="card">
+    <h2>
+      <span>AdGuard 广告过滤</span>
+      <span style="display:flex;gap:6px;align-items:center">
+        <span class="tag" id="adg-tag"></span>
+        <button id="btn-prot" style="font-size:11px;padding:2px 9px">暂停</button>
+        <button id="btn-dns" style="font-size:11px;padding:2px 9px">清DNS</button>
+      </span>
+    </h2>
+    <div class="body">
+      <div class="kv"><span class="k">DNS 查询</span><span class="v big" id="adg-q">—</span></div>
+      <div class="kv"><span class="k">已拦截</span><span class="v big err" id="adg-b">—</span></div>
+      <div class="kv"><span class="k">拦截率</span><span class="v" id="adg-pct">—</span></div>
+      <div class="bar"><i id="adg-bar" style="width:0%;background:var(--err)"></i></div>
+      <div class="kv" style="margin-top:8px"><span class="k">平均处理</span><span class="v" id="adg-avg">—</span></div>
+      <div class="kv"><span class="k">保护状态</span><span class="v" id="adg-prot">—</span></div>
+    </div>
+  </div>
+
+  <!-- 趋势图 -->
+  <div class="card full">
+    <h2>
+      <span>趋势</span>
+      <span class="chart-tabs" id="chart-tabs">
+        <button data-tab="traffic" class="on">流量</button>
+        <button data-tab="load">负载/内存</button>
+        <button data-tab="temp">温度</button>
+        <button data-tab="delay">节点延迟</button>
+        <button data-tab="dns">DNS 拦截</button>
+      </span>
+    </h2>
+    <div class="body">
+      <div class="chart-wrap" id="chart"><div class="chart-empty">加载中…</div></div>
+      <div class="chart-legend" id="chart-legend"></div>
+      <div class="note" id="chart-note"></div>
+    </div>
+  </div>
+
+  <!-- 节点列表 -->
+  <div class="card">
+    <h2>
+      <span>代理节点</span>
+      <span style="display:flex;gap:6px;align-items:center">
+        <span class="tag" id="node-cnt"></span>
+        <button id="btn-test" style="font-size:11px;padding:2px 9px">测速</button>
+      </span>
+    </h2>
+    <div class="body as-flex">
+      <div class="kv">
+        <span class="k">生效分组 <span class="dim" style="font-size:11px">(承载流量)</span></span>
+        <span class="v ok" id="routing-group">—</span>
+      </div>
+      <div class="kv">
+        <span class="k">管理分组 <span class="dim" style="font-size:11px">(下方可切换)</span></span>
+        <span class="v dim" id="node-group">—</span>
+      </div>
+      <div class="scroll" id="node-list"><div class="dim">加载中…</div></div>
+      <div class="note" id="node-msg"></div>
+    </div>
+  </div>
+
+  <!-- 服务状态 -->
+  <div class="card">
+    <h2>服务状态</h2>
+    <div class="body" id="svc-body"><div class="dim">加载中…</div></div>
+  </div>
+
+  <!-- 进程 -->
+  <div class="card">
+    <h2>关键进程</h2>
+    <div class="body" id="proc-body"><div class="dim">加载中…</div></div>
+  </div>
+
+  <!-- 拦截域名 Top -->
+  <div class="card">
+    <h2>拦截域名 TOP</h2>
+    <div class="body scroll" id="adg-top"><div class="dim">暂无数据</div></div>
+  </div>
+
+  <!-- 无线客户端 -->
+  <div class="card">
+    <h2>无线客户端 <span class="tag" id="wifi-cnt"></span></h2>
+    <div class="body scroll" id="wifi-body"><div class="dim">加载中…</div></div>
+  </div>
+
+  <!-- NAS 硬盘 -->
+  <div class="card">
+    <h2>
+      <span>NAS 硬盘</span>
+      <span class="tag" id="nas-tag"></span>
+    </h2>
+    <div class="body scroll" id="nas-body" style="max-height:340px"><div class="dim">加载中…</div></div>
+  </div>
+
+  <!-- 设备流量排行 -->
+  <div class="card">
+    <h2>
+      <span>设备流量排行</span>
+      <span class="tag" id="traffic-tag"></span>
+    </h2>
+    <div class="body scroll" id="traffic-body"><div class="dim">加载中…</div></div>
+  </div>
+
+  <!-- 服务入口：路由器服务 + Docker 容器，混排 -->
+  <div class="card full">
+    <h2>
+      <span>服务入口</span>
+      <span style="display:flex;gap:6px;align-items:center">
+        <span class="tag" id="ctr-tag"></span>
+        <button id="btn-ctr" class="mini" style="margin-left:0">刷新</button>
+      </span>
+    </h2>
+    <div class="body scroll" id="ctr-body"><div class="dim">加载中…</div></div>
+  </div>
+
+  <!-- 在线设备 -->
+  <div class="card full">
+    <h2>在线设备 <span class="tag" id="dev-cnt"></span></h2>
+    <div class="body scroll" id="dev-body"><div class="dim">加载中…</div></div>
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let paused = false;
+
+/* ---- 会话失效自动跳登录页 ----
+   包一层 fetch：任何请求返回 401 就跳 /login。
+   这样不用给每个接口单独加重定向逻辑。 */
+const _rawFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const r = await _rawFetch(...args);
+  if(r.status === 401){
+    location.replace('/login');
+    throw new Error('未登录');
+  }
+  return r;
+};
+
+/* ---- 当前登录用户 + 退出按钮 ---- */
+(async () => {
+  try{
+    const r = await _rawFetch('/api/whoami', {cache:'no-store'});
+    const d = await r.json();
+    if(d && d.authEnabled){
+      $('who').textContent = d.user ? ('👤 ' + d.user) : '';
+      $('btn-logout').style.display = '';
+    }
+  }catch(e){}
+})();
+
+$('btn-logout').onclick = async () => {
+  if(!confirm('确定退出登录？')) return;
+  try{ await _rawFetch('/api/logout', {method:'POST'}); }catch(e){}
+  location.replace('/login');
+};
+
+function fmtBytes(n){
+  if(n===null||n===undefined||isNaN(n)) return '—';
+  const u=['B','KB','MB','GB','TB']; let i=0;
+  while(n>=1024&&i<u.length-1){n/=1024;i++;}
+  return n.toFixed(i<2?0:1)+' '+u[i];
+}
+function fmtRate(n){
+  if(!n||n<1) return '0 B/s';
+  const u=['B/s','KB/s','MB/s','GB/s']; let i=0;
+  while(n>=1024&&i<u.length-1){n/=1024;i++;}
+  return n.toFixed(1)+' '+u[i];
+}
+function fmtUptime(s){
+  if(!s) return '—';
+  const d=Math.floor(s/86400), h=Math.floor(s%86400/3600), m=Math.floor(s%3600/60);
+  if(d>0) return d+' 天 '+h+' 时';
+  if(h>0) return h+' 时 '+m+' 分';
+  return m+' 分';
+}
+function fmtNum(n){
+  if(n===null||n===undefined||isNaN(n)) return '—';
+  return n.toLocaleString('zh-CN');
+}
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function delayClass(d){
+  if(!d||d<=0) return 'dim';
+  if(d<150) return 'ok'; if(d<400) return 'warn'; return 'err';
+}
+
+// 用户正在操作某个控件时，跳过这次自动刷新，避免打断
+function userIsInteracting(){
+  const ae = document.activeElement;
+  if(!ae) return false;
+  if(ae.tagName === 'SELECT') return true;          // 下拉框打开/聚焦中
+  if(ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') return true;
+  return false;
+}
+
+async function load(){
+  if(paused || paused_by_focus) return;
+  if(userIsInteracting()) return;   // 别在用户操作控件时重建 DOM
+  let d;
+  try{
+    const r = await fetch('/api/all', {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    d = await r.json();
+  }catch(e){
+    $('err').textContent = '请求失败: '+e.message;
+    $('led').classList.add('bad');
+    return;
+  }
+  $('err').textContent = '';
+  const rt = d.router||{}, mh = d.mihomo||{}, ag = d.adguard||{};
+
+  renderLinks(d.links);
+
+  const ok = rt.alive || mh.alive;
+  $('led').classList.toggle('bad', !ok);
+  $('updated').textContent = '更新于 '+new Date().toLocaleTimeString('zh-CN');
+
+  /* ---- 概览 ---- */
+  $('rate-rx').textContent = fmtRate(rt.rxRate);
+  $('rate-tx').textContent = fmtRate(rt.txRate);
+  $('pub-ip').textContent  = rt.publicIP || '—';
+  $('wan-ip').textContent  = rt.wanIP || '—';
+  $('wan-ip6').textContent = rt.wanIPv6 || '—';
+  $('uptime-tag').textContent = rt.uptimeS ? '已运行 '+fmtUptime(rt.uptimeS) : '';
+
+  /* ---- 系统 ---- */
+  if(rt.alive){
+    const la = (rt.loadavg||'').split(' ').slice(0,3).join(' / ');
+    const laN = parseFloat((rt.loadavg||'0').split(' ')[0]);
+    const laEl = $('load');
+    laEl.textContent = la || '—';
+    laEl.className = 'v ' + (laN>4?'err':laN>2?'warn':'ok');
+
+    const tEl = $('temp');
+    tEl.textContent = rt.tempC ? rt.tempC.toFixed(0)+' °C' : '—';
+    tEl.className = 'v ' + (rt.tempC>80?'err':rt.tempC>70?'warn':'ok');
+
+    const pct = rt.memTotalKB ? (rt.memUsedKB/rt.memTotalKB*100) : 0;
+    $('mem').innerHTML = fmtBytes(rt.memUsedKB*1024)+' / '+fmtBytes(rt.memTotalKB*1024)+
+                         ' <small>('+pct.toFixed(0)+'%)</small>';
+    $('mem').className = 'v ' + (pct>90?'err':pct>75?'warn':'ok');
+    $('mem-bar').style.width = pct.toFixed(1)+'%';
+    $('mem-bar').style.background = pct>90?'var(--err)':pct>75?'var(--warn)':'var(--acc)';
+
+    $('uptime').textContent = fmtUptime(rt.uptimeS);
+  }else{
+    $('sys-body').innerHTML = '<div class="err-box">'+
+      esc(rt.error||'SSH 采集失败，请检查 ROUTER_SSH_PASS / ROUTER_SSH_KEY 配置')+'</div>';
+  }
+
+  /* ---- mihomo ---- */
+  $('mihomo-ver').textContent = mh.version || (mh.alive?'':'离线');
+  $('conns').textContent  = mh.alive ? fmtNum(mh.connections) : '—';
+  $('mode').textContent   = mh.mode || '—';
+  $('dl-total').textContent = fmtBytes(mh.downloadTotal);
+  $('ul-total').textContent = fmtBytes(mh.uploadTotal);
+  if(mh.error) $('cur-node').textContent = mh.error;
+
+  /* ---- AdGuard ---- */
+  if(ag.alive){
+    $('adg-q').textContent = fmtNum(ag.queries);
+    $('adg-b').textContent = fmtNum(ag.blocked);
+    $('adg-pct').textContent = (ag.blockedPercent||0).toFixed(1)+' %';
+    $('adg-bar').style.width = Math.min(100, ag.blockedPercent||0)+'%';
+    $('adg-avg').textContent = ag.avgProcessingMs ? ag.avgProcessingMs.toFixed(1)+' ms' : '—';
+    $('adg-prot').innerHTML = ag.protectionEnabled
+      ? '<span class="v ok">已启用</span>' : '<span class="v err">已禁用</span>';
+    $('adg-tag').textContent = ag.protectionEnabled ? '运行中' : '已禁用';
+
+    const tops = ag.topBlocked||[];
+    $('adg-top').innerHTML = tops.length
+      ? '<table><tbody>'+tops.map(t=>
+          '<tr><td class="mono">'+esc(t.name)+'</td><td style="text-align:right" class="dim">'+fmtNum(t.count)+'</td></tr>'
+        ).join('')+'</tbody></table>'
+      : '<div class="dim">暂无拦截记录</div>';
+  }else{
+    $('adg-tag').textContent = '离线';
+    $('adg-top').innerHTML = '<div class="err-box">'+esc(ag.error||'AdGuard 不可用')+'</div>';
+  }
+
+  /* ---- 服务（带启停按钮）---- */
+  const svcs = rt.services||[];
+  svcData = svcs;
+  $('svc-body').innerHTML = svcs.length ? svcs.map(s=>{
+    let btns = '';
+    if(s.key === 'speedtest'){
+      btns = s.alive
+        ? '<button class="mini" data-svc="speedtest" data-act="stop">停止</button>'
+        : '<button class="mini" data-svc="speedtest" data-act="start">启动</button>';
+    }else if(s.key){
+      btns = '<button class="mini" data-svc="'+esc(s.key)+'" data-act="restart">重启</button>';
+    }
+    return '<div class="svc"><span class="led '+(s.alive?'on':'off')+'"></span>'+
+      '<span class="nm">'+esc(s.name)+'</span>'+
+      '<span class="pt">'+(s.alive?'✅':'❌')+' :'+esc(s.port)+'</span>'+
+      btns+'</div>';
+  }).join('') : '<div class="dim">—</div>';
+
+  $('svc-body').querySelectorAll('button[data-svc]').forEach(b=>{
+    b.onclick = () => doControl(b.dataset.svc, b.dataset.act, b);
+  });
+
+  /* ---- AdGuard 保护开关按钮 ---- */
+  if(ag.alive){
+    const pb = $('btn-prot');
+    pb.textContent = ag.protectionEnabled ? '暂停' : '恢复';
+    pb.dataset.enabled = ag.protectionEnabled ? '1' : '0';
+  }
+
+  /* ---- 进程 ---- */
+  const ps = d.procs||[];
+  $('proc-body').innerHTML = ps.length ? ps.map(p=>
+    '<div class="svc"><span class="led '+(p.alive?'on':'off')+'"></span>'+
+    '<span class="nm mono">'+esc(p.name)+'</span>'+
+    '<span class="pt">'+(p.alive? p.count+' 个进程' : '未运行')+'</span></div>'
+  ).join('') : '<div class="dim">—</div>';
+
+  /* ---- 无线 ---- */
+  const wf = d.wifi||[];
+  $('wifi-cnt').textContent = wf.length+' 个';
+  $('wifi-body').innerHTML = wf.length
+    ? '<table><thead><tr><th>频段</th><th>MAC</th><th>信号</th><th>协议</th></tr></thead><tbody>'+
+      wf.map(w=>{
+        const cls = w.rssi>-60?'ok':w.rssi>-70?'warn':'err';
+        return '<tr><td>'+esc(w.band)+'</td>'+
+          '<td class="mono dim">'+esc(w.mac)+'</td>'+
+          '<td class="v '+cls+'">'+w.rssi.toFixed(0)+' dBm</td>'+
+          '<td class="dim">'+esc(w.phy)+'</td></tr>';
+      }).join('')+'</tbody></table>'
+    : '<div class="dim">无无线客户端</div>';
+
+  /* ---- 设备 ---- */
+  const dv = d.devices||[];
+  const online = dv.filter(x=>x.online).length;
+  $('dev-cnt').textContent = online+' 在线 / '+dv.length+' 总计';
+  $('dev-body').innerHTML = dv.length
+    ? '<table><thead><tr><th>状态</th><th>IP</th><th>MAC</th><th>名称</th></tr></thead><tbody>'+
+      dv.map(x=>
+        '<tr><td>'+(x.online?'<span class="v ok">●</span>':'<span class="dim">○</span>')+'</td>'+
+        '<td class="mono">'+esc(x.ip)+'</td>'+
+        '<td class="mono dim">'+esc(x.mac)+'</td>'+
+        '<td>'+esc(x.name||'—')+'</td></tr>'
+      ).join('')+'</tbody></table>'
+    : '<div class="dim">暂无设备</div>';
+
+  /* ---- 当前节点（取第一个 Selector 组） ---- */
+  loadNode();
+}
+
+const LS_KEY = 'netdash.manageGroup';
+
+let nodeData = null;              // /api/proxies 结果缓存
+let svcData = [];                 // 服务状态缓存
+let routingGroup = null;          // 真正「生效」的分组（来自 MATCH 兜底规则）
+let grpSig = '';                  // 分组列表签名：只有变化时才重建下拉框
+let nodeListSig = '';             // 节点列表签名：内容没变就不重绘
+let paused_by_focus = false;      // 下拉框聚焦中 → 暂停自动刷新
+
+// ⚠️ 关键：从 localStorage 恢复上次选的分组。
+// 只 setItem 不 getItem 的话，每次刷新页面都会重置回默认分组。
+let manageGroup = null;
+try{ manageGroup = localStorage.getItem(LS_KEY) || null; }catch(e){ manageGroup = null; }
+
+// 挑选默认「管理」分组：上次选的 → 生效分组 → 节点选择 → 其它 Selector
+// ⚠️ 必须【始终返回字符串（分组名）】。之前一个分支返回字符串、其它分支返回对象，
+//    调用处统一取 .name，导致字符串分支得到 undefined，下拉框每 5 秒就跳一次。
+function pickManageGroup(groups){
+  if(manageGroup && groups.some(g=>g.name===manageGroup)) return manageGroup;
+  const g = groups.find(x=>x.name===routingGroup)
+      || groups.find(x=>x.name==='节点选择')
+      || groups.find(x=>x.type==='Selector' && x.now && x.name!=='GLOBAL')
+      || groups.find(x=>x.type==='Selector' && x.now)
+      || groups[0];
+  return g ? g.name : null;
+}
+
+async function loadNode(){
+  try{
+    const r = await fetch('/api/proxies', {cache:'no-store'});
+    const d = await r.json();
+    if(d.error){
+      $('node-list').innerHTML = '<div class="err-box">'+esc(d.error)+'</div>';
+      $('cur-node').textContent = '—';
+      return;
+    }
+    nodeData = d;
+    const groups = d.groups||[];
+    const nodes  = d.nodes||[];
+    routingGroup = d.activeGroup || null;
+
+    // 顶部 mihomo 卡片：显示「生效分组」当前用的节点
+    if(routingGroup && !$('cur-node').dataset.manual){
+      const rg0 = groups.find(g=>g.name===routingGroup);
+      if(rg0 && rg0.now){ $('cur-node').textContent = rg0.now; }
+    }
+
+    // 生效分组展示
+    const rg = routingGroup ? groups.find(g=>g.name===routingGroup) : null;
+    if(rg){
+      $('routing-group').innerHTML = esc(rg.name)+
+        ' <span class="dim" style="font-weight:400">→</span> '+esc(rg.now||'—');
+    }else{
+      $('routing-group').innerHTML = '<span class="dim">未识别（无 MATCH 规则？）</span>';
+    }
+
+    // 管理分组（下拉框，持久化到 localStorage）
+    const mg = pickManageGroup(groups);
+    if(mg) manageGroup = mg;   // mg 已经是分组名字符串
+
+    // ⚠️ 只在「分组列表真的变了」时才重建 <select>。
+    // 每 5 秒无脑重建会销毁用户正在操作的下拉框，导致选项看起来"自己跳变"。
+    const sig = groups.map(g=>g.name+'|'+g.type).join(',') + '#' + (routingGroup||'');
+    let gsel = $('grp-sel');
+
+    if(!gsel || grpSig !== sig){
+      grpSig = sig;
+      $('node-group').innerHTML = groups.length
+        ? '<select id="grp-sel" style="background:var(--card2);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:2px 6px;font-size:12px">'+
+          groups.map(g=>'<option value="'+esc(g.name)+'"'+(g.name===manageGroup?' selected':'')+'>'+
+            esc(g.name)+' ('+esc(g.type)+')'+(g.name===routingGroup?' ★生效':'')+'</option>').join('')+'</select>'
+        : '—';
+
+      gsel = $('grp-sel');
+      if(gsel){
+        gsel.onchange = () => {
+          manageGroup = gsel.value;
+          try{ localStorage.setItem(LS_KEY, manageGroup); }catch(e){}
+          renderNodes();
+        };
+        // 聚焦时暂停刷新，收起后再恢复
+        gsel.onfocus = () => { paused_by_focus = true; };
+        gsel.onblur  = () => { paused_by_focus = false; };
+      }
+    }else{
+      // 已存在：只同步选中值，绝不重建
+      if(gsel.value !== manageGroup){ gsel.value = manageGroup; }
+    }
+
+    $('node-cnt').textContent = nodes.length+' 个';
+    renderNodes();
+  }catch(e){
+    $('node-list').innerHTML = '<div class="err-box">'+esc(e.message)+'</div>';
+  }
+}
+
+function renderNodes(){
+  if(!nodeData) return;
+  const nodes = nodeData.nodes||[];
+  const groups = nodeData.groups||[];
+  const g = groups.find(x=>x.name===manageGroup);
+  const current = g ? g.now : null;
+  const isRouting = (manageGroup === routingGroup);
+
+  if(!nodes.length){
+    $('node-list').innerHTML = '<div class="dim">未发现节点（订阅可能未加载）</div>';
+    return;
+  }
+  // 按延迟排序，0（未知）放最后
+  const sorted = nodes.slice().sort((a,b)=>{
+    const da = a.delay>0?a.delay:1e9, db = b.delay>0?b.delay:1e9;
+    return da-db;
+  });
+
+  // 保存滚动位置，重新渲染后恢复（否则每 5 秒会被顶回顶部）
+  const listEl = $('node-list');
+  const keepScroll = listEl.scrollTop;
+
+  // 生成列表签名：只有内容真的变了才重绘，减少闪烁
+  const newSig = manageGroup + '#' + sorted.map(n=>n.name+':'+n.delay).join(',');
+  if(nodeListSig === newSig && listEl.querySelector('table')){
+    // 内容没变，跳过重绘
+    updateNodeMsg(isRouting, sorted);
+    return;
+  }
+  nodeListSig = newSig;
+
+  listEl.innerHTML = '<table><tbody>'+sorted.map(n=>{
+    const isCur = n.name===current;
+    const cls = n.delay<=0?'dim':n.delay<150?'ok':n.delay<400?'warn':'err';
+    const delayTxt = n.delay>0 ? n.delay+' ms' : '—';
+    return '<tr class="node-row" data-node="'+esc(n.name)+'" style="cursor:pointer'+
+      (isCur?';background:rgba(88,166,255,.10)':'')+'">'+
+      '<td style="width:18px">'+(isCur?'<span class="v ok">●</span>':'')+'</td>'+
+      '<td>'+esc(n.name)+'</td>'+
+      '<td class="dim" style="font-size:11px">'+esc(n.type)+'</td>'+
+      '<td class="v '+cls+'" style="text-align:right;white-space:nowrap">'+delayTxt+'</td>'+
+      '</tr>';
+  }).join('')+'</tbody></table>';
+
+  listEl.scrollTop = keepScroll;
+
+  updateNodeMsg(isRouting, sorted);
+
+  listEl.querySelectorAll('.node-row').forEach(row=>{
+    row.onclick = () => doSwitch(row.dataset.node);
+  });
+}
+
+function updateNodeMsg(isRouting, sorted){
+  if(!isRouting && routingGroup){
+    $('node-msg').innerHTML = '<span class="v warn">⚠️ 你正在管理「'+esc(manageGroup||'')+'」，'+
+      '但真正承载流量的是「'+esc(routingGroup)+'」。<br>在这里切节点不会影响上网。</span>';
+  }else if(!sorted.some(n=>n.delay>0)){
+    $('node-msg').innerHTML = '<span class="dim">点右上角「测速」获取延迟</span>';
+  }else{
+    $('node-msg').innerHTML = '';
+  }
+}
+
+async function doSwitch(node){
+  if(!manageGroup){ return; }
+  $('node-msg').textContent = '正在切换到 '+node+' …';
+  try{
+    const r = await fetch('/api/switch', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({group: manageGroup, node: node})
+    });
+    const d = await r.json();
+    if(d.ok){
+      $('node-msg').innerHTML = '<span class="v ok">✅ 已切换到 '+esc(node)+'</span>';
+      $('cur-node').dataset.manual = '1';
+      $('cur-node').textContent = node;
+      // 等一下让 mihomo 生效，再刷新
+      setTimeout(()=>{ delete $('cur-node').dataset.manual; loadNode(); }, 800);
+    }else{
+      $('node-msg').innerHTML = '<span class="v err">❌ '+esc(d.error||'切换失败')+'</span>';
+    }
+  }catch(e){
+    $('node-msg').innerHTML = '<span class="v err">❌ '+esc(e.message)+'</span>';
+  }
+}
+
+/* ---- 整组测速 ---- */
+async function doTest(){
+  if(!manageGroup){ return; }
+  const btn = $('btn-test');
+  btn.disabled = true;
+  btn.textContent = '测速中…';
+  $('node-msg').textContent = '正在测试 '+manageGroup+' 的所有节点（约 5-15 秒）…';
+  try{
+    const r = await fetch('/api/test?group='+encodeURIComponent(manageGroup), {cache:'no-store'});
+    const d = await r.json();
+    if(d.ok){
+      $('node-msg').innerHTML = '<span class="v ok">✅ 测速完成 '+d.elapsed.toFixed(1)+'s｜可用 '+
+        d.usable+'/'+d.total+'｜最快 '+d.best+'ms</span>';
+      if(nodeData && nodeData.nodes){
+        nodeData.nodes.forEach(n=>{
+          if(d.delays && d.delays[n.name] !== undefined) n.delay = d.delays[n.name];
+        });
+        renderNodes();
+      }
+    }else{
+      $('node-msg').innerHTML = '<span class="v err">❌ '+esc(d.error||'测速失败')+'</span>';
+    }
+  }catch(e){
+    $('node-msg').innerHTML = '<span class="v err">❌ '+esc(e.message)+'</span>';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = '测速';
+  }
+}
+$('btn-test').onclick = doTest;
+
+/* ---- 服务启停 ---- */
+const ACTION_LABEL = {start:'启动', stop:'停止', restart:'重启'};
+
+async function doControl(service, action, btn){
+  const label = ACTION_LABEL[action] || action;
+  btn.disabled = true;
+  btn.textContent = label + '中…';
+
+  let ok = false, err = '';
+  try{
+    const r = await fetch('/api/control', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({service: service, action: action})
+    });
+    const d = await r.json();
+    ok = !!d.ok;
+    err = d.error || d.output || '';
+  }catch(e){ err = e.message; }
+
+  btn.textContent = ok ? ('✅ '+label) : '❌ 失败';
+  if(!ok){ alert(label + ' 失败：\n' + err); }
+
+  // 等服务真正起来再刷新状态
+  setTimeout(load, ok ? 2500 : 800);
+}
+
+/* ---- AdGuard 保护开关 ---- */
+$('btn-prot').onclick = async function(){
+  const btn = this;
+  const wantOn = btn.dataset.enabled === '0';   // 当前暂停 → 要恢复
+  btn.disabled = true;
+  btn.textContent = '处理中…';
+  try{
+    const r = await fetch('/api/protection', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({enabled: wantOn})
+    });
+    const d = await r.json();
+    if(!d.ok){ alert('操作失败：' + (d.error||'未知错误')); }
+  }catch(e){ alert('请求失败：' + e.message); }
+  btn.disabled = false;
+  setTimeout(load, 800);
+};
+
+/* ============================================================
+   SVG 折线图（无第三方库）
+   ============================================================ */
+let chartTab = 'traffic';
+let histSamples = [];
+
+function fmtB(n){
+  const u=['B','K','M','G','T']; let i=0;
+  while(n>=1024&&i<u.length-1){n/=1024;i++;}
+  return n.toFixed(i<2?0:1)+u[i];
+}
+
+function drawChart(el, series, opt){
+  opt = opt || {};
+  const W = Math.max(320, el.clientWidth || 720);
+  const H = 180, PL = 54, PR = 14, PT = 12, PB = 24;
+  const iw = W - PL - PR, ih = H - PT - PB;
+
+  let tMin = Infinity, tMax = -Infinity, vMax = 0;
+  series.forEach(s => (s.data||[]).forEach(p => {
+    if(p.t < tMin) tMin = p.t;
+    if(p.t > tMax) tMax = p.t;
+    if(p.v > vMax) vMax = p.v;
+  }));
+
+  if(!isFinite(tMin) || tMax <= tMin || vMax <= 0){
+    el.innerHTML = '<div class="chart-empty">还没有足够的历史数据<br>'+
+      '<span style="font-size:11px">后台每 '+ (opt.intervalSec||60) +' 秒采一次，等几分钟再看</span></div>';
+    return;
+  }
+  vMax = vMax * 1.2;
+
+  const x = t => PL + (t - tMin) / (tMax - tMin) * iw;
+  const y = v => PT + ih - (v / vMax) * ih;
+
+  let g = '';
+  for(let i=0;i<=4;i++){
+    const v = vMax*i/4, yy = y(v);
+    g += '<line x1="'+PL+'" y1="'+yy.toFixed(1)+'" x2="'+(W-PR)+'" y2="'+yy.toFixed(1)+
+         '" stroke="#30363d" stroke-width="1"'+(i?' stroke-dasharray="2,4"':'')+'/>';
+    g += '<text x="'+(PL-6)+'" y="'+(yy+3).toFixed(1)+'" fill="#8b949e" font-size="10" text-anchor="end">'+
+         (opt.fmtY ? opt.fmtY(v) : v.toFixed(0))+'</text>';
+  }
+
+  const span = tMax - tMin;
+  for(let i=0;i<=4;i++){
+    const tt = tMin + span*i/4;
+    const d = new Date(tt*1000);
+    const lbl = span > 86400*1.5
+      ? (d.getMonth()+1)+'/'+d.getDate()
+      : String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+    g += '<text x="'+x(tt).toFixed(1)+'" y="'+(H-6)+'" fill="#8b949e" font-size="10" text-anchor="middle">'+lbl+'</text>';
+  }
+
+  series.forEach(s => {
+    const data = s.data||[];
+    if(data.length < 2) return;
+    const pts = data.map(p => x(p.t).toFixed(1)+','+y(p.v).toFixed(1)).join(' ');
+    if(s.fill){
+      g += '<polygon points="'+x(data[0].t).toFixed(1)+','+y(0).toFixed(1)+' '+pts+' '+
+           x(data[data.length-1].t).toFixed(1)+','+y(0).toFixed(1)+
+           '" fill="'+s.color+'" opacity="0.10"/>';
+    }
+    g += '<polyline points="'+pts+'" fill="none" stroke="'+s.color+
+         '" stroke-width="1.6" stroke-linejoin="round"/>';
+  });
+
+  el.innerHTML = '<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'">'+g+'</svg>';
+}
+
+function renderChart(){
+  const el = $('chart');
+  if(!el) return;
+  const S = histSamples;
+  const legend = $('chart-legend');
+  const note = $('chart-note');
+
+  if(!S.length){
+    el.innerHTML = '<div class="chart-empty">历史数据加载中…</div>';
+    legend.innerHTML = '';
+    return;
+  }
+
+  let series = [], fmtY = null, text = '';
+
+  if(chartTab === 'traffic'){
+    series = [
+      {name:'下行', color:'#39c5cf', fill:true, data:S.map(s=>({t:s.t, v:s.rx||0}))},
+      {name:'上行', color:'#bc8cff', fill:true, data:S.map(s=>({t:s.t, v:s.tx||0}))},
+    ];
+    fmtY = v => fmtB(v)+'/s';
+    const peak = Math.max(...S.map(s=>Math.max(s.rx||0, s.tx||0)));
+    text = '峰值 ' + fmtB(peak) + '/s';
+  }else if(chartTab === 'load'){
+    series = [
+      {name:'CPU 1分钟负载', color:'#3fb950', data:S.map(s=>({t:s.t, v:s.load||0}))},
+      {name:'内存 %', color:'#d29922', data:S.map(s=>({t:s.t, v:s.mem||0}))},
+    ];
+    fmtY = v => v.toFixed(1);
+  }else if(chartTab === 'temp'){
+    series = [{name:'路由器温度', color:'#f85149', fill:true, data:S.map(s=>({t:s.t, v:s.temp||0}))}];
+    fmtY = v => v.toFixed(0)+'°';
+    const cur = S[S.length-1].temp||0;
+    text = '当前 ' + cur.toFixed(0) + ' °C';
+  }else if(chartTab === 'delay'){
+    const d = S.filter(s=>s.delay>0).map(s=>({t:s.t, v:s.delay}));
+    series = [{name:'当前节点延迟', color:'#58a6ff', fill:true, data:d}];
+    fmtY = v => v.toFixed(0)+'ms';
+    if(d.length){
+      const avg = d.reduce((a,b)=>a+b.v,0)/d.length;
+      text = '平均 ' + avg.toFixed(0) + ' ms，共 ' + d.length + ' 个采样';
+    }
+  }else if(chartTab === 'dns'){
+    const q=[], b=[];
+    for(let i=1;i<S.length;i++){
+      const dt = S[i].t - S[i-1].t;
+      if(dt <= 0) continue;
+      const dq = S[i].dns - S[i-1].dns, db = S[i].blk - S[i-1].blk;
+      if(dq < 0 || db < 0) continue;
+      const per = 60/dt;
+      q.push({t:S[i].t, v:dq*per});
+      b.push({t:S[i].t, v:db*per});
+    }
+    series = [
+      {name:'DNS 查询/分钟', color:'#39c5cf', data:q},
+      {name:'被拦截/分钟', color:'#f85149', fill:true, data:b},
+    ];
+    fmtY = v => v.toFixed(0);
+    const tq = q.reduce((a,c)=>a+c.v,0), tb = b.reduce((a,c)=>a+c.v,0);
+    if(tq > 0) text = '区间拦截率 ' + (tb/tq*100).toFixed(1) + '%';
+  }
+
+  drawChart(el, series, {fmtY: fmtY, intervalSec: 60});
+  legend.innerHTML = series.map(s =>
+    '<span><i style="background:'+s.color+'"></i>'+esc(s.name)+'</span>').join('');
+  note.textContent = text;
+}
+
+async function loadHistory(){
+  try{
+    const r = await fetch('/api/history?hours=24', {cache:'no-store'});
+    const d = await r.json();
+    histSamples = d.samples || [];
+    renderChart();
+  }catch(e){ /* 忽略 */ }
+}
+
+document.querySelectorAll('#chart-tabs button').forEach(b => {
+  b.onclick = () => {
+    chartTab = b.dataset.tab;
+    document.querySelectorAll('#chart-tabs button').forEach(x =>
+      x.classList.toggle('on', x.dataset.tab === chartTab));
+    renderChart();
+  };
+});
+
+/* ============================================================
+   NAS 硬盘
+   ============================================================ */
+async function loadNAS(){
+  let d;
+  try{
+    const r = await fetch('/api/nas', {cache:'no-store'});
+    d = await r.json();
+  }catch(e){
+    $('nas-body').innerHTML = '<div class="err-box">'+esc(e.message)+'</div>';
+    return;
+  }
+  const body = $('nas-body');
+
+  if(!d.available){
+    $('nas-tag').textContent = '不可用';
+    body.innerHTML = '<div class="err-box">'+esc(d.note||'读取失败')+'</div>';
+    return;
+  }
+  $('nas-tag').textContent = d.hostname || '';
+
+  let html = '';
+
+  // 文件系统占用（全部显示，卡片内部滚动）
+  (d.fs||[]).forEach(f => {
+    const cls = f.pct >= 90 ? 'err' : f.pct >= 75 ? 'warn' : 'ok';
+    const color = f.pct >= 90 ? 'var(--err)' : f.pct >= 75 ? 'var(--warn)' : 'var(--acc)';
+    html += '<div class="disk-row">'+
+      '<span class="dn" title="'+esc(f.mount)+(f.fstype?' ['+esc(f.fstype)+']':'')+'">'+esc(f.mount)+'</span>'+
+      '<span class="dbar"><i style="width:'+Math.min(100,f.pct).toFixed(1)+'%;background:'+color+'"></i></span>'+
+      '<span class="dv pct v '+cls+'">'+f.pct.toFixed(0)+'%</span>'+
+      '<span class="dv">'+fmtB(f.free)+'/'+fmtB(f.total)+'</span>'+
+      '</div>';
+  });
+
+  // 物理磁盘
+  (d.disks||[]).forEach(k => {
+    const io = (k.readPS>0 || k.writePS>0)
+      ? ' · 读 '+fmtB(k.readPS)+'/s 写 '+fmtB(k.writePS)+'/s' : '';
+    const tp = k.temp > 0 ? ' · '+k.temp.toFixed(0)+'°C' : '';
+    html += '<div class="disk-row" style="opacity:.85">'+
+      '<span class="dn">'+esc(k.name)+'</span>'+
+      '<span class="dv" style="flex:1;text-align:left">'+
+        (k.model ? esc(k.model)+' · ' : '') + fmtB(k.size) + tp + io + '</span>'+
+      '</div>';
+  });
+
+  if(d.cpuTemp > 0){
+    html += '<div class="note">NAS 温度最高 '+d.cpuTemp.toFixed(0)+' °C';
+    if((d.hostTemps||[]).length){
+      html += '（'+(d.hostTemps||[]).slice(0,3).map(t=>esc(t.label)+' '+t.c.toFixed(0)+'°C').join('、')+'）';
+    }
+    html += '</div>';
+  }
+  if(d.memTotal > 0){
+    const pct = (d.memTotal - d.memAvail) / d.memTotal * 100;
+    html += '<div class="note">NAS 内存 '+fmtB(d.memTotal-d.memAvail)+' / '+fmtB(d.memTotal)+
+            ' ('+pct.toFixed(0)+'%)'+(d.loadAvg?' · 负载 '+esc(d.loadAvg):'')+'</div>';
+  }
+  if(d.note){ html += '<div class="note v warn">'+esc(d.note)+'</div>'; }
+  if(!html){ html = '<div class="dim">未发现磁盘信息</div>'; }
+
+  body.innerHTML = html;
+}
+
+/* ============================================================
+   设备流量排行
+   ============================================================ */
+async function loadTraffic(){
+  let d;
+  try{
+    const r = await fetch('/api/traffic', {cache:'no-store'});
+    d = await r.json();
+  }catch(e){ return; }
+
+  const list = d.list || [];
+  $('traffic-tag').textContent = d.note ? '受限' : (list.length + ' 台');
+
+  if(!list.length){
+    $('traffic-body').innerHTML = '<div class="err-box">'+esc(d.note||'无数据')+'</div>';
+    return;
+  }
+  const max = Math.max(...list.map(x=>x.bytes), 1);
+  const hasBytes = list.some(x=>x.bytes > 0);
+
+  $('traffic-body').innerHTML =
+    (d.note ? '<div class="note v warn" style="padding-bottom:6px">'+esc(d.note)+'</div>' : '') +
+    '<table><thead><tr><th>IP</th><th>名称</th><th style="text-align:right">'+
+    (hasBytes?'流量':'连接数')+'</th></tr></thead><tbody>' +
+    list.slice(0,15).map(x => {
+      const name = (d.names && d.names[x.ip]) || '';
+      const val = hasBytes ? fmtB(x.bytes) : (x.conns+' 条');
+      const w = hasBytes ? Math.min(100, x.bytes/max*100) : 0;
+      return '<tr><td class="mono">'+esc(x.ip)+'</td>'+
+        '<td>'+(name?esc(name):'<span class="dim">—</span>')+'</td>'+
+        '<td class="v" style="text-align:right">'+val+
+        (w>0?'<div class="bar" style="margin-top:3px"><i style="width:'+w.toFixed(0)+'%;background:var(--cyan)"></i></div>':'')+
+        '</td></tr>';
+    }).join('') + '</tbody></table>';
+}
+
+/* ============================================================
+   服务入口 —— 路由器服务 + Docker 容器 混排在一个网格里
+   ============================================================ */
+let linkData = [];      // 路由器服务（来自 /api/all 的 links）
+let linkSig  = '';
+let ctrData  = null;    // Docker 容器（来自 /api/containers）
+let entrySig = '';      // 内容签名，没变就不重绘
+
+// 从 URL 里取出好看的小标签：有端口显示 :端口，没有就显示域名
+function urlChip(u){
+  try{
+    const x = new URL(u);
+    if(x.port) return ':' + x.port;
+    if(x.hostname) return x.hostname;
+  }catch(e){}
+  return '🔗 打开';
+}
+
+function buildEntry(){
+  const el = $('ctr-body');
+  if(!el) return;
+
+  // 用当前访问仪表盘的主机名拼地址 —— 自动就是 NAS 的 IP
+  const host = location.hostname || 'localhost';
+  const items = [];
+
+  // ---- 路由器服务 ----
+  (linkData || []).forEach(l => {
+    const ic = ICONS[l.icon] || ICONS[String(l.name).toLowerCase()] || ICONS.link;
+    items.push(
+      '<div class="ctr" title="'+esc(l.name)+'">'+
+        '<div class="ct"><span class="ico">'+ic+'</span>'+
+          '<span class="tx">'+esc(l.name)+'</span></div>'+
+        '<div class="cp"><a href="'+esc(l.url)+'" target="_blank" rel="noopener" '+
+          'title="'+esc(l.url)+'">'+esc(urlChip(l.url))+'</a></div>'+
+      '</div>');
+  });
+
+  // ---- Docker 容器 ----
+  if(ctrData && ctrData.available){
+    (ctrData.containers || []).forEach(c => {
+      const links = [];
+
+      // 显式指定的地址（dashboard.url 标签 / containers.json 的 url 字段）
+      (c.urls || []).forEach(u => links.push({ href:u, text:urlChip(u) }));
+
+      // 自动探测出的端口
+      (c.ports || []).forEach(p => {
+        if(!p.public) return;
+
+        // 只声明没发布 → 容器外访问不到，不做成链接
+        if(p.mode === 'internal'){
+          links.push({
+            text: ':' + p.public,
+            internal: true,
+            title: '内部端口 ' + p.public + '（未映射到宿主，容器外访问不到）',
+          });
+          return;
+        }
+
+        const proto = (p.public === 443 || p.public === 8443) ? 'https' : 'http';
+        const href  = proto + '://' + host + ':' + p.public;
+        links.push({
+          href: href,
+          text: ':' + p.public,
+          noweb: !p.web,
+          title: (p.mode === 'host' ? 'host 网络 · ' : '') + href,
+        });
+      });
+
+      const portHtml = links.length
+        ? '<div class="cp">' + links.map(l =>
+            l.internal
+              ? '<span class="int" title="'+esc(l.title)+'">'+esc(l.text)+'</span>'
+              : '<a href="'+esc(l.href)+'" target="_blank" rel="noopener" class="'+(l.noweb?'noweb':'')+'" '+
+                'title="'+esc(l.title)+'">'+esc(l.text)+'</a>'
+          ).join('') + '</div>'
+        : '<div class="cs" style="margin:0">无端口信息</div>';
+
+      const running = c.state === 'running';
+      const tip = c.name !== c.title ? ' title="容器名: '+esc(c.name)+'"' : '';
+
+      items.push(
+        '<div class="ctr '+(running?'':'off')+'"'+tip+'>'+
+          '<div class="ct">'+(c.icon ? '<span class="ico">'+esc(c.icon)+'</span>' : '')+
+            '<span class="tx">'+esc(c.title)+'</span></div>'+
+          '<div class="cs">'+esc(c.image)+(running?'':' · 已停止')+'</div>'+
+          portHtml+
+        '</div>');
+    });
+  }
+
+  // 内容没变就不重绘（避免每 5 秒闪一下）
+  const sig = items.join('');
+  if(sig === entrySig) return;
+  entrySig = sig;
+
+  el.innerHTML = items.length
+    ? '<div class="ctr-grid">' + items.join('') + '</div>'
+    : '<div class="dim">没有服务</div>';
+}
+
+async function loadContainers(){
+  try{
+    const r = await fetch('/api/containers', {cache:'no-store'});
+    ctrData = await r.json();
+  }catch(e){
+    ctrData = { available:false, note:'请求失败: ' + e.message };
+  }
+
+  if(ctrData && ctrData.available){
+    $('ctr-tag').textContent = 'Docker ' + ctrData.running + ' / ' + ctrData.total + ' 运行中';
+  }else{
+    $('ctr-tag').textContent = 'Docker 不可用';
+  }
+  buildEntry();
+}
+
+const btnCtr = $('btn-ctr');
+if(btnCtr){
+  btnCtr.onclick = function(){
+    const b = this;
+    b.disabled = true; b.textContent = '刷新中…';
+    loadContainers().then(()=>{ b.disabled = false; b.textContent = '刷新'; });
+  };
+}
+
+/* ============================================================
+   快捷入口
+   ============================================================ */
+const ICONS = {
+  shield:'🛡️', proxy:'🌐', speed:'⚡', router:'📶', lucky:'🍀',
+  nas:'💾', link:'🔗', adguard:'🛡️', mihomo:'🌐',
+};
+function renderLinks(links){
+  if(!links) return;
+  const sig = links.map(l=>l.name+l.url).join('|');
+  if(sig === linkSig) return;
+  linkSig = sig;
+  linkData = links;
+  buildEntry();
+}
+
+/* ============================================================
+   订阅更新 / DNS 缓存 / 通知测试
+   ============================================================ */
+$('btn-sub').onclick = async function(){
+  const btn = this;
+  btn.disabled = true; btn.textContent = '更新中…';
+  try{
+    const r = await fetch('/api/subscription', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'
+    });
+    const d = await r.json();
+    if(d.ok){
+      btn.textContent = '✅ ' + d.nodes + ' 节点';
+      setTimeout(()=>{ loadNode(); }, 1500);
+    }else{
+      btn.textContent = '❌ 失败';
+      alert('订阅更新失败：' + (d.error||'未知错误'));
+    }
+  }catch(e){
+    btn.textContent = '❌ 失败';
+    alert('请求失败：' + e.message);
+  }
+  setTimeout(()=>{ btn.disabled = false; btn.textContent = '更新订阅'; }, 4000);
+};
+
+$('btn-dns').onclick = async function(){
+  const btn = this;
+  btn.disabled = true; btn.textContent = '清理中…';
+  try{
+    const r = await fetch('/api/dns/flush', {method:'POST'});
+    const d = await r.json();
+    btn.textContent = d.ok ? '✅ 已清' : '❌ 失败';
+    if(d.msg) $('adg-tag').textContent = d.msg;
+    if(!d.ok) alert('清理失败：' + (d.error||'未知错误'));
+  }catch(e){
+    btn.textContent = '❌ 失败';
+    alert('请求失败：' + e.message);
+  }
+  setTimeout(()=>{ btn.disabled = false; btn.textContent = '清DNS'; }, 3000);
+};
+
+/* ---- 测试通知 ---- */
+const btnNotify = $('btn-notify');
+if(btnNotify){
+  btnNotify.onclick = async function(){
+    const btn = this;
+    btn.disabled = true; btn.textContent = '发送中…';
+    try{
+      const r = await fetch('/api/notify/test', {method:'POST'});
+      const d = await r.json();
+      if(d.ok){ btn.textContent = '✅ 已发送'; }
+      else{ btn.textContent = '❌ 未配置'; alert(d.error||'发送失败'); }
+    }catch(e){ btn.textContent = '❌ 失败'; alert(e.message); }
+    setTimeout(()=>{ btn.disabled = false; btn.textContent = '测试通知'; }, 3000);
+  };
+}
+
+$('pause').onclick = () => {
+  paused = !paused;
+  $('pause').textContent = paused ? '继续刷新' : '暂停刷新';
+  if(!paused) load();
+};
+
+/* ---- 窗口尺寸变化时重画图表 ---- */
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(renderChart, 250);
+});
+
+/* ---- 启动 + 定时任务 ---- */
+load();
+loadHistory();
+loadNAS();
+loadTraffic();
+loadContainers();
+
+setInterval(load, 5000);          // 主数据
+setInterval(loadHistory, 60000);  // 历史曲线
+setInterval(loadNAS, 30000);      // NAS 硬盘
+setInterval(loadTraffic, 60000);  // 设备流量（走 SSH，慢一些）
+setInterval(loadContainers, 30000); // Docker 容器清单
+</script>
+</body>
+</html>

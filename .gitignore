@@ -1,0 +1,17 @@
+# 环境配置（含密码，禁止提交）
+.env
+.env.local
+
+# 运行时数据（历史采样、已知设备、会话密钥）
+data/
+
+# 编译产物
+/dashboard
+/dashboard.exe
+*.test
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
