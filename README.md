@@ -33,14 +33,43 @@
 
 ## 快速部署（NAS 上）
 
-### 1. 上传文件
+### 方式一：直接拉取镜像（推荐，不用编译）
+
+GitHub Actions 已自动构建 `linux/amd64` + `linux/arm64` 双架构镜像：
+
+```bash
+docker pull ghcr.io/dtqeight/net-dashboard:latest
+```
+
+在放 `.env` 的目录里直接启动（目录结构、挂载与 compose 一致）：
+
+```bash
+docker run -d --name net-dashboard --restart unless-stopped \
+  -p 18080:8080 \
+  --env-file .env \
+  -e TZ=Asia/Shanghai \
+  -v "$(pwd)/data:/data" \
+  -v /:/host/root:ro \
+  -v /sys:/host/sys:ro \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  ghcr.io/dtqeight/net-dashboard:latest
+```
+
+镜像更新：`docker compose pull && docker compose up -d`（或重新 `docker run`）。
+
+> 也可以把 `docker-compose.yml` 里的 `build: .` 删掉、加一行
+> `image: ghcr.io/dtqeight/net-dashboard:latest`，直接 `docker compose up -d`。
+
+### 方式二：本地构建
+
+#### 1. 上传文件
 
 把整个 `dashboard` 目录放到 NAS 上，例如 `/volume1/docker/dashboard`（群晖）
 或绿联 NAS 的某个数据卷里。
 
 **重要**：确认目标目录所在分区有足够空间（构建镜像需要约 1GB 临时空间）。
 
-### 2. 创建配置文件
+#### 2. 创建配置文件
 
 ```bash
 cd /volume1/docker/dashboard
@@ -56,7 +85,7 @@ vi .env          # 填写密码
 | `ADGUARD_USER` / `ADGUARD_PASS` | AdGuard 管理员账号密码 |
 | `ROUTER_SSH_PASS` | 路由器 root 密码（SSH 用） |
 
-### 3. 构建并启动
+#### 3. 构建并启动
 
 ```bash
 docker compose up -d --build
@@ -64,7 +93,7 @@ docker compose up -d --build
 
 首次构建会拉取 `golang:1.23-alpine`（约 300MB）并编译，**需要几分钟**。
 
-### 4. 访问
+#### 4. 访问
 
 ```
 http://NAS的IP:18080
