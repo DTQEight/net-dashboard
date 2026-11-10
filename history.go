@@ -109,6 +109,31 @@ func (h *History) Range(after time.Time) []Sample {
 	return out
 }
 
+// Totals 统计 from 之后的总流量（字节），按采样间隔对速率积分。
+// 两次采样间隔过大（服务重启/休眠）时跳过该段，避免把速率乘以一段空白时间。
+func (h *History) Totals(from time.Time) (rx, tx float64) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	cut := from.Unix()
+	gap := int64(cfg.SampleSec) * 3
+	if gap < 180 {
+		gap = 180
+	}
+	for i := 1; i < len(h.samples); i++ {
+		s := h.samples[i]
+		if s.T < cut {
+			continue
+		}
+		dt := s.T - h.samples[i-1].T
+		if dt <= 0 || dt > gap {
+			continue
+		}
+		rx += s.Rx * float64(dt)
+		tx += s.Tx * float64(dt)
+	}
+	return
+}
+
 func (h *History) Last() (Sample, bool) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

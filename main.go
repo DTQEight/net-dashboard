@@ -1560,6 +1560,21 @@ func handleHistory(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// 区间总流量：最近 1 天 / 1 周 / 1 月
+func handleTrafficTotal(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	out := map[string]map[string]float64{}
+	for k, d := range map[string]time.Duration{
+		"day":   24 * time.Hour,
+		"week":  7 * 24 * time.Hour,
+		"month": 30 * 24 * time.Hour,
+	} {
+		rx, tx := hist.Totals(now.Add(-d))
+		out[k] = map[string]float64{"rx": rx, "tx": tx}
+	}
+	writeJSON(w, out)
+}
+
 func handleTraffic(w http.ResponseWriter, r *http.Request) {
 	list, note := getDeviceTraffic()
 	// 给 IP 补上设备名
@@ -1878,8 +1893,8 @@ func main() {
 	initDocker()
 	initAuth(cfg.DataDir)
 	initAlerts(cfg.DataDir)
-	initHistory(cfg.DataDir, 7*24*3600/cfg.SampleSec) // 保留 7 天
-	log.Printf("采样间隔: %ds  保留: 7 天  NAS 挂载: %s", cfg.SampleSec, cfg.HostRoot)
+	initHistory(cfg.DataDir, 31*24*3600/cfg.SampleSec) // 保留 31 天（月流量统计需要）
+	log.Printf("采样间隔: %ds  保留: 31 天  NAS 挂载: %s", cfg.SampleSec, cfg.HostRoot)
 
 	// 预热一次 SSH 缓存（不阻塞启动）
 	go func() {
@@ -1905,6 +1920,7 @@ func main() {
 	mux.HandleFunc("/api/containers", handleContainers)
 	mux.HandleFunc("/api/history", handleHistory)
 	mux.HandleFunc("/api/traffic", handleTraffic)
+	mux.HandleFunc("/api/traffic-total", handleTrafficTotal)
 	mux.HandleFunc("/api/subscription", handleSubscription)
 	mux.HandleFunc("/api/dns/flush", handleDNSFlush)
 	mux.HandleFunc("/api/links", handleLinks)

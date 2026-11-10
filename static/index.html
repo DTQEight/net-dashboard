@@ -222,6 +222,19 @@
         <div class="kv"><span class="k">WAN 地址</span><span class="v mono" id="wan-ip">—</span></div>
         <div class="kv"><span class="k">WAN IPv6</span><span class="v mono dim" id="wan-ip6">—</span></div>
       </div>
+      <div style="margin-top:12px">
+        <div class="kv">
+          <span class="k">总流量</span>
+          <span class="chart-tabs" id="tt-tabs">
+            <button data-r="day" class="on">1 天</button>
+            <button data-r="week">1 周</button>
+            <button data-r="month">1 月</button>
+          </span>
+        </div>
+        <div class="kv"><span class="k">↓ 下行</span><span class="v cyan" id="tt-rx">—</span></div>
+        <div class="kv"><span class="k">↑ 上行</span><span class="v purple" id="tt-tx">—</span></div>
+        <div class="note" id="tt-note"></div>
+      </div>
     </div>
   </div>
 
@@ -1026,6 +1039,37 @@ document.querySelectorAll('#chart-tabs button').forEach(b => {
 });
 
 /* ============================================================
+   区间总流量（1 天 / 1 周 / 1 月）
+   ============================================================ */
+let ttData = null, ttRange = 'day';
+
+function renderTotal(){
+  if(!ttData) return;
+  const d = ttData[ttRange] || {};
+  const rx = d.rx || 0, tx = d.tx || 0;
+  $('tt-rx').textContent = rx > 0 ? fmtB(rx) : '—';
+  $('tt-tx').textContent = tx > 0 ? fmtB(tx) : '—';
+  $('tt-note').textContent = (rx+tx) > 0 ? '合计 ' + fmtB(rx+tx) : '暂无采样数据，后台每 60 秒采一次';
+}
+
+async function loadTotal(){
+  try{
+    const r = await fetch('/api/traffic-total', {cache:'no-store'});
+    ttData = await r.json();
+    renderTotal();
+  }catch(e){ /* 忽略 */ }
+}
+
+document.querySelectorAll('#tt-tabs button').forEach(b => {
+  b.onclick = () => {
+    ttRange = b.dataset.r;
+    document.querySelectorAll('#tt-tabs button').forEach(x =>
+      x.classList.toggle('on', x.dataset.r === ttRange));
+    renderTotal();
+  };
+});
+
+/* ============================================================
    NAS 硬盘
    ============================================================ */
 async function loadNAS(){
@@ -1345,12 +1389,14 @@ loadHistory();
 loadNAS();
 loadTraffic();
 loadContainers();
+loadTotal();
 
 setInterval(load, 5000);          // 主数据
 setInterval(loadHistory, 60000);  // 历史曲线
 setInterval(loadNAS, 30000);      // NAS 硬盘
 setInterval(loadTraffic, 60000);  // 设备流量（走 SSH，慢一些）
 setInterval(loadContainers, 30000); // Docker 容器清单
+setInterval(loadTotal, 60000);    // 区间总流量
 </script>
 </body>
 </html>
