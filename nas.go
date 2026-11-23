@@ -33,6 +33,8 @@ type diskIO struct {
 	Temp   float64 `json:"temp,omitempty"`
 	Model  string  `json:"model,omitempty"`
 	Rotate bool    `json:"rotate"`
+	USB    bool    `json:"usb,omitempty"`      // 是否 USB 移动硬盘
+	Link   int     `json:"linkMbps,omitempty"` // USB 链路速率 Mbps（480=USB2.0, 5000=USB3.0）
 }
 
 type fsUsage struct {
@@ -614,6 +616,31 @@ func readHostFS(hostRoot string) []fsUsage {
 	return uniq
 }
 
+// usbLink 判断块设备是否走 USB，并取链路速率（Mbps）。
+// USB 设备在 /sys 里的真实路径一定包含 "/usb"；速率在同一条 USB 设备链路的上层目录的 speed 文件里。
+func usbLink(sysRoot, name string) (bool, int) {
+	link := filepath.Join(sysRoot, "block", name)
+	if _, err := os.Stat(link); err != nil {
+		link = filepath.Join("/sys/block", name)
+	}
+	real, err := filepath.EvalSymlinks(link)
+	if err != nil || !strings.Contains(real, "/usb") {
+		return false, 0
+	}
+	dir := real
+	for i := 0; i < 8; i++ {
+		dir = filepath.Dir(dir)
+		if b, err := os.ReadFile(filepath.Join(dir, "speed")); err == nil {
+			n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+			return true, n
+		}
+		if dir == "/" || dir == sysRoot {
+			break
+		}
+	}
+	return true, 0
+}
+
 func getNASInfo() nasInfo {
 	var out nasInfo
 	out.Available = true
@@ -673,6 +700,7 @@ func getNASInfo() nasInfo {
 	var disks []diskIO
 	for name, size := range sizes {
 		d := diskIO{Name: name, Size: size, Model: models[name]}
+		d.USB, d.Link = usbLink(cfg.HostSys, name)
 		if v, ok := io[name]; ok {
 			d.ReadB, d.WriteB = v[0], v[1]
 			if dt > 0.5 {

@@ -363,6 +363,15 @@
     <div class="body scroll" id="nas-body" style="max-height:340px"><div class="dim">加载中…</div></div>
   </div>
 
+  <!-- USB 移动硬盘 -->
+  <div class="card">
+    <h2>
+      <span>USB 移动硬盘</span>
+      <span class="tag" id="usb-tag"></span>
+    </h2>
+    <div class="body scroll" id="usb-body" style="max-height:240px"><div class="dim">加载中…</div></div>
+  </div>
+
   <!-- 设备流量排行 -->
   <div class="card">
     <h2>
@@ -1070,6 +1079,41 @@ document.querySelectorAll('#tt-tabs button').forEach(b => {
 });
 
 /* ============================================================
+   USB 移动硬盘读写速度
+   ============================================================ */
+function renderUSB(disks){
+  const body = $('usb-body'), tag = $('usb-tag');
+  if(!body) return;
+  const list = (disks||[]).filter(k => k.usb);
+  if(!list.length){
+    tag.textContent = '';
+    body.innerHTML = '<div class="dim">未检测到 USB 移动硬盘</div>';
+    return;
+  }
+  tag.textContent = list.length + ' 块';
+  let h = '';
+  list.forEach(k => {
+    const slow = k.linkMbps > 0 && k.linkMbps < 5000;
+    const gen = k.linkMbps >= 5000 ? 'USB 3.0'
+              : k.linkMbps >= 480 ? 'USB 2.0'
+              : k.linkMbps > 0 ? k.linkMbps + ' Mbps' : '';
+    const link = gen
+      ? ' · <span class="v '+(slow?'warn':'ok')+'">'+gen+(slow?' 降速':'')+'</span>'
+      : '';
+    h += '<div class="disk-row">'+
+      '<span class="dn">'+esc(k.name)+'</span>'+
+      '<span class="dv" style="flex:1;text-align:left">'+
+        '读 <b>'+fmtB(k.readPS)+'/s</b> · 写 <b>'+fmtB(k.writePS)+'/s</b>'+
+        '<div class="dv" style="text-align:left;margin-top:2px;white-space:normal">'+
+          fmtB(k.size)+(k.model?' · '+esc(k.model):'')+link+
+        '</div>'+
+      '</span>'+
+      '</div>';
+  });
+  body.innerHTML = h;
+}
+
+/* ============================================================
    NAS 硬盘
    ============================================================ */
 async function loadNAS(){
@@ -1079,6 +1123,7 @@ async function loadNAS(){
     d = await r.json();
   }catch(e){
     $('nas-body').innerHTML = '<div class="err-box">'+esc(e.message)+'</div>';
+    renderUSB([]);
     return;
   }
   const body = $('nas-body');
@@ -1086,6 +1131,7 @@ async function loadNAS(){
   if(!d.available){
     $('nas-tag').textContent = '不可用';
     body.innerHTML = '<div class="err-box">'+esc(d.note||'读取失败')+'</div>';
+    renderUSB([]);
     return;
   }
   $('nas-tag').textContent = d.hostname || '';
@@ -1132,6 +1178,7 @@ async function loadNAS(){
   if(!html){ html = '<div class="dim">未发现磁盘信息</div>'; }
 
   body.innerHTML = html;
+  renderUSB(d.disks||[]);
 }
 
 /* ============================================================
